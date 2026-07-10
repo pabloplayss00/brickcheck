@@ -1,460 +1,120 @@
-<!DOCTYPE html>
-<html lang="en-GB">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KerbCheck — is that asking price actually fair?</title>
-<meta name="description" content="Check any asking price against what similar homes genuinely sold for nearby. Official HM Land Registry data. Free, no sign-up, 10 seconds.">
+// KerbCheck — street report API
+// Returns two datasets for the full report:
+//   street: every recorded sale at the exact postcode since 2000
+//   area:   sales within ~1 mile over the last 4 years (same as the checker)
+// England & Wales only (Land Registry Price Paid Data).
 
-<!-- How the link looks when shared on Facebook / WhatsApp -->
-<meta property="og:title" content="KerbCheck — is that asking price actually fair?">
-<meta property="og:description" content="Paste a postcode and asking price. See what similar homes really sold for nearby — official Land Registry data, free in 10 seconds.">
-<meta property="og:type" content="website">
-<meta name="twitter:card" content="summary">
+const SPARQL_ENDPOINT = "https://landregistry.data.gov.uk/landregistry/query";
+const POSTCODES_IO = "https://api.postcodes.io";
 
-<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="18" fill="%231B2A41"/><text x="50" y="68" font-size="56" font-family="Georgia,serif" font-weight="bold" text-anchor="middle" fill="white">B</text><circle cx="76" cy="66" r="7" fill="%23B23A2E"/></svg>'>
-
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@600;700&family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  :root { --ink:#1B2A41; --ink2:#2C3E5C; --muted:#5A6B80; --faint:#8494A7; --line:#E2E8EF; --bg:#F4F6F8;
-          --card:#fff; --green:#1E7F4F; --greenbg:#E9F5EE; --amber:#B26E00; --amberbg:#FBF3E2;
-          --red:#B23A2E; --redbg:#FBEAE7; }
-  * { box-sizing:border-box; }
-  body { margin:0; min-height:100vh; background:var(--bg); color:var(--ink); font-family:'Inter',system-ui,sans-serif; }
-
-  /* ---------- header + hero ---------- */
-  .hero { background:var(--ink); color:#fff; padding:22px 16px 88px;
-          background-image:radial-gradient(rgba(255,255,255,.06) 1px, transparent 1px); background-size:22px 22px; }
-  .hero-inner { max-width:480px; margin:0 auto; }
-  .wordmark { font-family:'Zilla Slab',serif; font-weight:700; font-size:24px; letter-spacing:-.5px; }
-  .wordmark .dot { color:#FF6B54; }
-  .h1 { font-family:'Zilla Slab',serif; font-weight:700; font-size:31px; line-height:1.16; margin:26px 0 10px; }
-  .h1 em { font-style:normal; color:#FFC9BF; border-bottom:3px solid #FF6B54; }
-  .lede { font-size:15px; line-height:1.55; color:#C4CEDB; margin:0; }
-  .trustbar { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:16px; font-size:12px; color:#9FB0C4; }
-  .trustbar span::before { content:"✓"; color:#6FCF97; margin-right:5px; font-weight:700; }
-
-  .shell { max-width:480px; margin:0 auto; padding:0 14px 48px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:20px; margin-top:16px;
-          box-shadow:0 1px 3px rgba(27,42,65,.06), 0 8px 24px rgba(27,42,65,.05); }
-  .card.lift { margin-top:-64px; }
-
-  label.f { display:block; font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; margin:14px 0 6px; }
-  label.f:first-child { margin-top:0; }
-  .inwrap { position:relative; }
-  .inwrap .prefix { position:absolute; left:13px; top:50%; transform:translateY(-50%); font-family:'IBM Plex Mono',monospace; font-size:17px; color:var(--faint); pointer-events:none; }
-  input.f { width:100%; font-family:'IBM Plex Mono',monospace; font-size:17px; padding:12px 13px; border:1.5px solid #C9D2DC; border-radius:10px; background:#FAFBFC; color:var(--ink); outline:none; transition:border-color .12s; }
-  input.f.money { padding-left:30px; }
-  input.f:focus { border-color:var(--ink); background:#fff; }
-  .typerow { display:flex; gap:8px; flex-wrap:wrap; }
-  .ptype { flex:1 1 45%; padding:10px 0; border:1.5px solid #C9D2DC; border-radius:10px; background:#FAFBFC; font-size:14px; font-weight:500; color:var(--muted); text-align:center; cursor:pointer; user-select:none; transition:all .12s; }
-  .ptype.sel { background:var(--ink); border-color:var(--ink); color:#fff; font-weight:600; }
-  .go { width:100%; margin-top:18px; padding:14px; border:none; border-radius:11px; background:var(--ink); color:#fff; font-size:16px; font-weight:700; font-family:'Inter',sans-serif; cursor:pointer; letter-spacing:.01em; }
-  .go:hover { background:var(--ink2); }
-  .go:active { transform:translateY(1px); }
-  .go[disabled] { opacity:.6; cursor:wait; }
-  .reassure { text-align:center; font-size:12px; color:var(--faint); margin-top:10px; }
-  .err { color:var(--red); background:var(--redbg); border-radius:9px; padding:10px 12px; font-size:13.5px; margin-top:12px; }
-
-  /* ---------- how it works ---------- */
-  .how { display:flex; gap:10px; margin-top:16px; }
-  .how .step { flex:1; background:#fff; border:1px solid var(--line); border-radius:12px; padding:12px 10px; text-align:center; }
-  .how .n { font-family:'Zilla Slab',serif; font-weight:700; color:#FF6B54; font-size:15px; }
-  .how .t { font-size:12px; color:var(--muted); line-height:1.4; margin-top:3px; }
-
-  /* ---------- loading skeleton ---------- */
-  .skel { margin-top:16px; }
-  .skel .bar { height:14px; border-radius:7px; background:linear-gradient(90deg,#E8EDF2 25%,#F4F7FA 50%,#E8EDF2 75%); background-size:200% 100%; animation:shimmer 1.2s infinite; margin-bottom:10px; }
-  @keyframes shimmer { to { background-position:-200% 0; } }
-  .skel .note { text-align:center; font-size:12.5px; color:var(--faint); margin-top:6px; }
-
-  /* ---------- results ---------- */
-  .stampwrap { display:flex; justify-content:center; padding:8px 0 2px; }
-  .stamp { font-family:'Zilla Slab',serif; font-weight:700; font-size:24px; letter-spacing:.08em; padding:11px 24px; border:3px double currentColor; border-radius:6px; transform:rotate(-3deg); animation:thump .28s cubic-bezier(.2,1.4,.4,1); }
-  @keyframes thump { from { transform:rotate(-3deg) scale(1.7); opacity:0; } to { transform:rotate(-3deg) scale(1); opacity:1; } }
-  @media (prefers-reduced-motion:reduce){ .stamp{animation:none;} .skel .bar{animation:none;} }
-  .blurb { text-align:center; font-size:14.5px; line-height:1.55; color:#3A4A60; margin-top:12px; }
-  .bars { margin-top:20px; }
-  .barrow { margin-bottom:13px; }
-  .barlabel { display:flex; justify-content:space-between; gap:8px; font-size:12.5px; color:var(--muted); margin-bottom:5px; }
-  .barlabel b { font-family:'IBM Plex Mono',monospace; color:var(--ink); font-size:13.5px; white-space:nowrap; }
-  .bartrack { height:13px; background:#EEF2F6; border-radius:7px; overflow:hidden; }
-  .barfill { height:100%; border-radius:7px; transition:width .5s ease; }
-  .basis { font-size:11.5px; color:var(--faint); margin-top:2px; }
-
-  .sect { font-family:'Zilla Slab',serif; font-weight:600; font-size:18px; margin:0 0 4px; }
-  .sub { font-size:12.5px; color:var(--muted); margin:0 0 12px; line-height:1.5; }
-  .comp { display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:10px 0; border-top:1px dashed var(--line); }
-  .comp:first-of-type { border-top:none; }
-  .comp .street { font-size:14px; font-weight:600; }
-  .comp .meta { font-size:12px; color:var(--muted); margin-top:1px; }
-  .comp .p { font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:14.5px; white-space:nowrap; }
-
-  .cta { display:block; width:100%; text-align:left; margin-top:10px; padding:14px 15px; border-radius:11px; border:1.5px solid var(--line); background:#FAFBFC; cursor:pointer; font-family:'Inter',sans-serif; text-decoration:none; transition:border-color .12s; }
-  .cta:hover { border-color:#B9C5D2; }
-  .cta .t { font-size:15px; font-weight:600; color:var(--ink); }
-  .cta .d { font-size:12.5px; color:var(--muted); margin-top:3px; line-height:1.45; }
-  .cta.primary { background:var(--green); border-color:var(--green); }
-  .cta.primary:hover { background:#1A7046; }
-  .cta.primary .t { color:#fff; }
-  .cta.primary .d { color:#D7EEDF; }
-
-  .sharewrap { text-align:center; margin-top:18px; }
-  .share { display:inline-flex; align-items:center; gap:7px; padding:10px 18px; border-radius:999px; border:1.5px solid var(--line); background:#fff; color:var(--ink); font-size:13.5px; font-weight:600; font-family:'Inter',sans-serif; cursor:pointer; }
-  .share:hover { border-color:#B9C5D2; }
-
-  .footer { text-align:center; font-size:11px; color:var(--faint); margin-top:26px; line-height:1.7; }
-  .footer a { color:var(--faint); }
-  .hidden { display:none; }
-</style>
-</head>
-<body>
-
-<div class="hero">
-  <div class="hero-inner">
-    <div class="wordmark">KerbCheck<span class="dot">.</span></div>
-    <div class="h1">Don't overpay for your <em>next home</em>.</div>
-    <p class="lede">Estate agents show you asking prices. We show you what similar homes nearby <strong>genuinely sold for</strong> — straight from the official HM Land Registry record.</p>
-    <div class="trustbar">
-      <span>Official Land Registry data</span>
-      <span>Free</span>
-      <span>No sign-up</span>
-      <span>Covers England, Wales &amp; Scotland</span>
-    </div>
-  </div>
-</div>
-
-<div class="shell">
-  <div class="card lift">
-    <label class="f" for="pc">Property postcode</label>
-    <input class="f" id="pc" placeholder="e.g. M21 9PN" autocomplete="postal-code" autocapitalize="characters">
-    <label class="f" for="price">Asking price</label>
-    <div class="inwrap"><span class="prefix">£</span><input class="f money" id="price" inputmode="numeric" placeholder="450,000"></div>
-    <label class="f">Property type</label>
-    <div class="typerow" id="types">
-      <div class="ptype sel" data-t="terraced">Terraced</div>
-      <div class="ptype" data-t="semi-detached">Semi-detached</div>
-      <div class="ptype" data-t="detached">Detached</div>
-      <div class="ptype" data-t="flat-maisonette">Flat</div>
-    </div>
-    <button class="go" id="go">Check this price</button>
-    <div class="reassure">Takes about 10 seconds · nothing to install, nothing to sign up for</div>
-    <div class="err hidden" id="err"></div>
-  </div>
-
-  <div class="how" id="how">
-    <div class="step"><div class="n">1</div><div class="t">Enter postcode &amp; asking price</div></div>
-    <div class="step"><div class="n">2</div><div class="t">We pull real sold prices nearby</div></div>
-    <div class="step"><div class="n">3</div><div class="t">Get a fair-price verdict</div></div>
-  </div>
-
-  <div class="skel hidden" id="loading">
-    <div class="card">
-      <div class="bar" style="width:55%; margin:0 auto 14px;"></div>
-      <div class="bar" style="width:90%;"></div>
-      <div class="bar" style="width:75%;"></div>
-      <div class="bar" style="width:82%;"></div>
-      <div class="note">Checking the official sold-price record…</div>
-    </div>
-  </div>
-
-  <div id="result" class="hidden">
-    <div class="card">
-      <div class="stampwrap"><div class="stamp" id="stamp"></div></div>
-      <div class="blurb" id="blurb"></div>
-      <div class="bars">
-        <div class="barrow">
-          <div class="barlabel"><span>Asking price</span><b id="askLabel"></b></div>
-          <div class="bartrack"><div class="barfill" id="askBar" style="background:var(--ink)"></div></div>
-        </div>
-        <div class="barrow">
-          <div class="barlabel"><span id="estName">Median sold price nearby</span><b id="estLabel"></b></div>
-          <div class="bartrack"><div class="barfill" id="estBar"></div></div>
-          <div class="basis" id="basis"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card" id="compsCard">
-      <h3 class="sect">What actually sold nearby</h3>
-      <p class="sub" id="compsSub"></p>
-      <div id="comps"></div>
-      <a class="cta" id="reportCta" href="#">
-        <div class="t">Get the full street report</div>
-        <div class="d">Every sale since 2000, price trends for this street, and a negotiation cheat sheet. Register your interest — coming soon.</div>
-      </a>
-    </div>
-
-    <div class="card">
-      <h3 class="sect">Before you offer</h3>
-      <p class="sub">The two things that make sellers take your offer seriously:</p>
-      <a class="cta primary" id="brokerCta" href="#">
-        <div class="t">Get a mortgage decision in principle →</div>
-        <div class="d">Free, no impact on your credit score. An offer backed by a DIP jumps the queue.</div>
-      </a>
-      <a class="cta hidden" id="surveyCta" href="#">
-        <div class="t">Book a survey before you offer</div>
-        <div class="d">A Level 2 survey gives you written evidence to negotiate the price down.</div>
-      </a>
-      <a class="cta" id="convCta" href="#">
-        <div class="t">Find a conveyancing solicitor</div>
-        <div class="d">Compare quotes from local firms in minutes.</div>
-      </a>
-    </div>
-
-    <div class="sharewrap">
-      <button class="share" id="shareBtn">📤&nbsp; Know someone house-hunting? Share KerbCheck</button>
-    </div>
-  </div>
-
-  <div class="footer">
-    Sold-price estimates are indicative and not a formal valuation.<br>
-    Some links are referral links — if you use them we may receive a fee, at no cost to you.<br>
-    Contains HM Land Registry data © Crown copyright and database right 2026.
-    Licensed under the <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">Open Government Licence v3.0</a>.
-  </div>
-</div>
-
-<script>
-// ============================================================
-// YOUR REVENUE LINKS — edit these once you have them.
-// Leave as "#" and the button shows a friendly placeholder.
-// ============================================================
-const CONFIG = {
-  BROKER_URL: "#",           // mortgage broker affiliate/referral link (main earner)
-  SURVEY_URL: "#",           // surveyor referral link
-  CONVEYANCING_URL: "#",     // conveyancing comparison referral link
-  REPORT_INTEREST_URL: "#",  // your Tally/Google Form — demand test for the paid report
-  // REPORT_MODE controls the street report button:
-  //   "interest" = button opens your interest form (demand test)
-  //   "free"     = button opens the real report page (report.html must be deployed)
-  REPORT_MODE: "interest",
-};
-
-const TYPE_LABELS = { "terraced":"terraced", "semi-detached":"semi-detached", "detached":"detached", "flat-maisonette":"flat" };
-let selectedType = "terraced";
-
-document.getElementById("types").addEventListener("click", (e) => {
-  const el = e.target.closest(".ptype");
-  if (!el) return;
-  document.querySelectorAll(".ptype").forEach((p) => p.classList.remove("sel"));
-  el.classList.add("sel");
-  selectedType = el.dataset.t;
-});
-
-// live thousands-separator on the price box
-const priceEl = document.getElementById("price");
-priceEl.addEventListener("input", () => {
-  const digits = priceEl.value.replace(/[^0-9]/g, "");
-  priceEl.value = digits ? parseInt(digits, 10).toLocaleString("en-GB") : "";
-});
-
-function gbp(n){ return "£" + Math.round(n).toLocaleString("en-GB"); }
-function normalisePostcode(raw){
-  const c = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (c.length < 5 || c.length > 7) return null;
-  return c.slice(0, -3) + " " + c.slice(-3);
-}
-function sectorOf(postcode){ return postcode.slice(0, postcode.indexOf(" ") + 2); }
-function monthsBetween(iso){
-  const d = new Date(iso), now = new Date();
-  return (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
-}
-function agoLabel(iso){
-  const m = monthsBetween(iso);
-  if (m <= 0) return "this month";
-  if (m === 1) return "1 month ago";
-  if (m < 12) return m + " months ago";
-  const y = Math.floor(m / 12);
-  return y === 1 ? "1 year ago" : y + " years ago";
-}
-function median(arr){
-  const s = [...arr].sort((a,b)=>a-b);
-  const mid = Math.floor(s.length/2);
-  return s.length % 2 ? s[mid] : (s[mid-1]+s[mid])/2;
-}
-function setError(msg){
-  const el = document.getElementById("err");
-  el.textContent = msg; el.classList.toggle("hidden", !msg);
-}
-function wireCta(id, url, comingSoonMsg){
-  const el = document.getElementById(id);
-  if (url && url !== "#") { el.href = url; el.target = "_blank"; el.rel = "noopener"; }
-  else el.addEventListener("click", (e) => { e.preventDefault(); alert(comingSoonMsg); });
-}
-wireCta("brokerCta", CONFIG.BROKER_URL, "Mortgage partner coming soon — check back shortly!");
-wireCta("surveyCta", CONFIG.SURVEY_URL, "Survey booking partner coming soon!");
-wireCta("convCta", CONFIG.CONVEYANCING_URL, "Conveyancing comparison coming soon!");
-if (CONFIG.REPORT_MODE !== "free") {
-  wireCta("reportCta", CONFIG.REPORT_INTEREST_URL, "Full street reports are coming soon — thanks for your interest, it genuinely helps us decide to build it!");
+async function runSparql(query) {
+  const resp = await fetch(SPARQL_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/sparql-results+json",
+    },
+    body: "query=" + encodeURIComponent(query),
+  });
+  if (!resp.ok) throw new Error("Land Registry responded with status " + resp.status);
+  const data = await resp.json();
+  return (data.results && data.results.bindings) || [];
 }
 
-document.getElementById("shareBtn").addEventListener("click", async () => {
-  const shareData = { title: "KerbCheck", text: "Check if an asking price is actually fair — real sold prices, free:", url: location.origin };
-  if (navigator.share) { try { await navigator.share(shareData); } catch(e){} }
-  else {
-    try { await navigator.clipboard.writeText(location.origin); alert("Link copied — paste it anywhere!"); }
-    catch(e) { alert("Copy this link: " + location.origin); }
+function mapSales(rows) {
+  return rows
+    .map((r) => ({
+      price: r.amount ? parseInt(r.amount.value, 10) : null,
+      date: r.date ? r.date.value : null,
+      type: r.propertyType ? r.propertyType.value.split("/").pop() : "unknown",
+      paon: r.paon ? r.paon.value : "",
+      street: r.street ? r.street.value : "",
+      postcode: r.postcode ? r.postcode.value : "",
+    }))
+    .filter((s) => s.price && s.date);
+}
+
+const SELECT = `
+PREFIX lrppi: <http://landregistry.data.gov.uk/def/ppi/>
+PREFIX lrcommon: <http://landregistry.data.gov.uk/def/common/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?amount ?date ?propertyType ?paon ?street ?postcode
+WHERE {
+  VALUES ?postcode { __VALUES__ }
+  ?addr lrcommon:postcode ?postcode .
+  ?transx lrppi:propertyAddress ?addr ;
+          lrppi:pricePaid ?amount ;
+          lrppi:transactionDate ?date .
+  OPTIONAL { ?transx lrppi:propertyType ?propertyType }
+  OPTIONAL { ?addr lrcommon:paon ?paon }
+  OPTIONAL { ?addr lrcommon:street ?street }
+  FILTER(?date >= "__FROM__"^^xsd:date)
+}
+ORDER BY DESC(?date)
+LIMIT __LIMIT__
+`;
+
+export default async function handler(req, res) {
+  const raw = (req.query.postcode || "").toString().toUpperCase().trim();
+  const clean = raw.replace(/[^A-Z0-9]/g, "");
+  if (clean.length < 5 || clean.length > 7) {
+    res.status(400).json({ error: "That doesn't look like a full UK postcode." });
+    return;
   }
-});
-
-document.getElementById("go").addEventListener("click", async () => {
-  const pc = normalisePostcode(document.getElementById("pc").value);
-  const asking = parseInt(priceEl.value.replace(/[^0-9]/g,""), 10);
-  if (!pc) return setError("That doesn't look like a full UK postcode — e.g. M21 9PN.");
-  if (!asking || asking < 20000) return setError("Enter the asking price, e.g. 450,000.");
-  setError("");
-
-  const btn = document.getElementById("go");
-  btn.disabled = true;
-  document.getElementById("result").classList.add("hidden");
-  document.getElementById("how").classList.add("hidden");
-  document.getElementById("loading").classList.remove("hidden");
+  const postcode = clean.slice(0, -3) + " " + clean.slice(-3);
 
   try {
-    const resp = await fetch("/api/sold-prices?postcode=" + encodeURIComponent(pc));
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || "Lookup failed");
-    if (data.mode === "hpi") renderScotland(pc, asking, data);
-    else render(pc, asking, data.sales || []);
-  } catch (e) {
-    setError(e.message + " — please try again in a moment.");
-  } finally {
-    btn.disabled = false;
-    document.getElementById("loading").classList.add("hidden");
+    const lookupResp = await fetch(POSTCODES_IO + "/postcodes/" + encodeURIComponent(postcode));
+    if (lookupResp.status === 404) {
+      res.status(400).json({ error: "We couldn't find that postcode — double-check it." });
+      return;
+    }
+    if (!lookupResp.ok) throw new Error("postcode lookup failed");
+    const lookup = await lookupResp.json();
+    const { latitude, longitude, country, admin_district, admin_ward } = lookup.result;
+
+    if (country !== "England" && country !== "Wales") {
+      res.status(400).json({
+        error: "Street reports are available for England & Wales only for now — street-level sold prices aren't open data elsewhere in the UK.",
+      });
+      return;
+    }
+
+    // --- street history: exact postcode, since 2000 ---
+    const streetRows = await runSparql(
+      SELECT.replace("__VALUES__", '"' + postcode + '"')
+        .replace("__FROM__", "2000-01-01")
+        .replace("__LIMIT__", "200")
+    );
+
+    // --- area pool: ~1 mile, last 4 years ---
+    const nearResp = await fetch(
+      POSTCODES_IO + "/postcodes?lon=" + longitude + "&lat=" + latitude + "&radius=1600&limit=100"
+    );
+    if (!nearResp.ok) throw new Error("nearby postcode lookup failed");
+    const near = await nearResp.json();
+    const codes = new Set([postcode]);
+    (near.result || []).forEach((p) => codes.add(p.postcode));
+
+    const from = new Date();
+    from.setFullYear(from.getFullYear() - 4);
+
+    const areaRows = await runSparql(
+      SELECT.replace("__VALUES__", [...codes].map((c) => '"' + c + '"').join(" "))
+        .replace("__FROM__", from.toISOString().slice(0, 10))
+        .replace("__LIMIT__", "250")
+    );
+
+    res.setHeader("Cache-Control", "s-maxage=86400, stale-while-revalidate=604800");
+    res.status(200).json({
+      postcode,
+      ward: admin_ward || "",
+      district: admin_district || "",
+      street: mapSales(streetRows),
+      area: mapSales(areaRows),
+    });
+  } catch (err) {
+    res.status(502).json({ error: "Could not fetch sold-price data. Try again in a moment." });
   }
-});
-
-function monthLabel(ym){
-  const d = new Date(ym + "-01");
-  return isNaN(d) ? ym : d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 }
-
-function applyStamp(verdict, fg, bg){
-  const stamp = document.getElementById("stamp");
-  stamp.textContent = verdict; stamp.style.color = fg; stamp.style.background = bg;
-  stamp.style.animation = "none"; void stamp.offsetWidth; stamp.style.animation = "";
-}
-
-function renderScotland(pc, asking, data){
-  const typeName = TYPE_LABELS[selectedType];
-  const avg = data.averages[selectedType] || data.averages.overall;
-  if (!avg) {
-    setError("No official price data available for that area yet.");
-    document.getElementById("how").classList.remove("hidden");
-    return;
-  }
-  const ratio = asking / avg;
-
-  let verdict, tone, extra;
-  if (ratio > 1.25) { verdict = "WELL ABOVE AVERAGE"; tone = "red";
-    extra = "That doesn't make it overpriced — location and condition matter hugely — but you'd want to see why it commands such a premium."; }
-  else if (ratio > 1.08) { verdict = "ABOVE AVERAGE"; tone = "amber";
-    extra = "Could be justified by the specific street or condition — worth comparing with the seller's Home Report valuation."; }
-  else if (ratio < 0.92) { verdict = "BELOW AVERAGE"; tone = "green";
-    extra = "Below the typical price for the area — check the Home Report for why."; }
-  else { verdict = "AROUND AVERAGE"; tone = "green";
-    extra = "Right in line with typical prices for the area."; }
-
-  const tones = { green:["var(--green)","var(--greenbg)"], amber:["var(--amber)","var(--amberbg)"], red:["var(--red)","var(--redbg)"] };
-  const [fg, bg] = tones[tone];
-  applyStamp(verdict, fg, bg);
-
-  document.getElementById("blurb").textContent =
-    "The typical price for a " + typeName + " in " + data.region + " is " + gbp(avg) +
-    " (official figure, " + monthLabel(data.month) + "). Street-level sold prices aren't open data in Scotland yet, so treat this as an area-level guide, not a valuation. " + extra;
-
-  const barMax = Math.max(asking, avg) * 1.1;
-  document.getElementById("askLabel").textContent = gbp(asking);
-  document.getElementById("askBar").style.width = (asking / barMax * 100) + "%";
-  document.getElementById("estLabel").textContent = gbp(avg);
-  document.getElementById("estBar").style.width = (avg / barMax * 100) + "%";
-  document.getElementById("estBar").style.background = fg;
-  document.getElementById("estName").textContent = "Typical " + typeName + " price, " + data.region;
-  document.getElementById("basis").textContent = "Official UK House Price Index · " + monthLabel(data.month);
-
-  // no street-level comps in Scotland; and sellers provide the Home Report,
-  // so buyers don't book their own survey
-  document.getElementById("compsCard").classList.add("hidden");
-  document.getElementById("surveyCta").classList.add("hidden");
-  document.getElementById("result").classList.remove("hidden");
-  document.getElementById("result").scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-function render(pc, asking, sales){
-  const sameType = sales.filter((s) => s.type === selectedType);
-  const recent = sameType.filter((s) => monthsBetween(s.date) <= 18);
-  const pool = recent.length >= 5 ? recent : sameType;
-  const usedFallback = sameType.length < 3;
-  const finalPool = usedFallback ? sales : pool;
-
-  if (finalPool.length < 3) {
-    setError("Not enough recorded sales near " + pc + " to give a fair verdict. Try a neighbouring postcode.");
-    document.getElementById("how").classList.remove("hidden");
-    return;
-  }
-
-  const estimate = median(finalPool.map((s) => s.price));
-  const ratio = asking / estimate;
-  const typeName = TYPE_LABELS[selectedType];
-
-  let verdict, tone, blurb;
-  if (ratio > 1.15) { verdict = "LOOKS VERY HIGH"; tone = "red";
-    blurb = "The asking price is well above what nearby " + typeName + " homes have actually sold for. Strong grounds to offer under asking — or walk away."; }
-  else if (ratio > 1.05) { verdict = "LOOKS HIGH"; tone = "amber";
-    blurb = "Priced above recent sold prices for nearby " + typeName + " homes. Worth negotiating."; }
-  else if (ratio < 0.93) { verdict = "POSSIBLE DEAL"; tone = "green";
-    blurb = "The asking price sits below recent sold prices for nearby " + typeName + " homes. Check why — then move quickly."; }
-  else { verdict = "PRICED FAIR"; tone = "green";
-    blurb = "In line with what nearby " + typeName + " homes have genuinely sold for recently."; }
-
-  const tones = { green:["var(--green)","var(--greenbg)"], amber:["var(--amber)","var(--amberbg)"], red:["var(--red)","var(--redbg)"] };
-  const [fg, bg] = tones[tone];
-  applyStamp(verdict, fg, bg);
-  document.getElementById("compsCard").classList.remove("hidden");
-  document.getElementById("blurb").textContent = blurb;
-
-  const barMax = Math.max(asking, estimate) * 1.1;
-  document.getElementById("askLabel").textContent = gbp(asking);
-  document.getElementById("askBar").style.width = (asking / barMax * 100) + "%";
-  document.getElementById("estLabel").textContent = gbp(estimate);
-  document.getElementById("estBar").style.width = (estimate / barMax * 100) + "%";
-  document.getElementById("estBar").style.background = fg;
-  document.getElementById("estName").textContent =
-    "Median sold price" + (usedFallback ? " (all types nearby)" : " (" + typeName + " nearby)");
-  document.getElementById("basis").textContent =
-    "Based on " + finalPool.length + " recorded sales within about a mile.";
-
-  document.getElementById("compsSub").textContent =
-    "Recent completed sales within about a mile of " + pc + " — real sold prices from HM Land Registry, not asking prices.";
-
-  const compsEl = document.getElementById("comps");
-  compsEl.innerHTML = "";
-  finalPool.slice(0, 8).forEach((s) => {
-    const row = document.createElement("div");
-    row.className = "comp";
-    const addr = [s.paon, s.street].filter(Boolean).join(" ") || s.postcode;
-    row.innerHTML = '<div><div class="street"></div><div class="meta"></div></div><div class="p"></div>';
-    row.querySelector(".street").textContent = addr;
-    row.querySelector(".meta").textContent = (TYPE_LABELS[s.type] || s.type) + " · sold " + agoLabel(s.date);
-    row.querySelector(".p").textContent = gbp(s.price);
-    compsEl.appendChild(row);
-  });
-
-  document.getElementById("surveyCta").classList.toggle("hidden", tone === "green");
-
-  if (CONFIG.REPORT_MODE === "free") {
-    const rc = document.getElementById("reportCta");
-    rc.href = "/report.html?postcode=" + encodeURIComponent(pc) + "&price=" + asking + "&type=" + encodeURIComponent(selectedType);
-    rc.target = "_blank"; rc.rel = "noopener";
-    rc.querySelector(".t").textContent = "Get the full street report — free";
-    rc.querySelector(".d").textContent = "Every sale at this postcode since 2000, the price trend, and a negotiation cheat sheet for this exact property.";
-  }
-
-  document.getElementById("result").classList.remove("hidden");
-  document.getElementById("result").scrollIntoView({ behavior: "smooth", block: "start" });
-}
-</script>
-</body>
-</html>

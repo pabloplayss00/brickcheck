@@ -204,7 +204,7 @@
         <div class="t">Get the full street report</div>
         <div class="d">Every sale since 2000, price trends for this street, and a negotiation cheat sheet. Register your interest — coming soon.</div>
       </a>
-      <p class="basis hidden" id="reportWaiver" style="margin-top:8px">Instant digital access — by paying you agree to get the report immediately and waive the standard 14-day cancellation right for this purchase. <a href="/legal.html">Terms</a>.</p>
+      <p class="basis hidden" id="reportWaiver" style="margin-top:8px">Monthly subscription, cancel any time — billed by Stripe. Instant digital access on your first payment means you waive the standard 14-day cancellation right for that first payment. <a href="/legal.html">Terms</a>.</p>
     </div>
 
     <div class="card">
@@ -247,25 +247,31 @@ const CONFIG = {
   BROKER_URL: "#",           // mortgage broker affiliate/referral link (main earner)
   SURVEY_URL: "#",           // surveyor referral link
   CONVEYANCING_URL: "#",     // conveyancing comparison referral link
-  REPORT_INTEREST_URL: "https://tally.so/r/kdxMlZ",  // your Tally/Google Form — demand test for the paid report
+  REPORT_INTEREST_URL: "https://tally.so/r/kdxMlZ",  // your Tally/Google Form — demand test for the subscription report
   // REPORT_MODE controls the street report button:
-  //   "interest" = button opens your interest form (demand test)
-  //   "free"     = button opens the real report page for free (report.html must be deployed)
-  //   "paid"     = button sends the buyer to Stripe to pay £3, then unlocks the report
-  REPORT_MODE: "interest",
-  // Only used when REPORT_MODE is "paid" — a Stripe Payment Link URL
-  // (looks like https://buy.stripe.com/xxxxxxxx). Create one free in the
-  // Stripe Dashboard for a one-off £3 price. See the README for the full
-  // setup, including the one field inside Stripe you must set correctly
-  // (the redirect URL after payment).
-  STRIPE_PAYMENT_LINK: "",
+  //   "interest"     = button opens your interest form (demand test)
+  //   "free"         = button opens the real report page for free (report.html must be deployed)
+  //   "subscription" = button opens report.html, which subscribes the buyer
+  //                    via Stripe (monthly), then unlocks unlimited reports
+  REPORT_MODE: "subscription",
+  // Only used when REPORT_MODE is "subscription" — a Stripe Payment Link URL
+  // (looks like https://buy.stripe.com/xxxxxxxx) for a RECURRING monthly
+  // price, not a one-time price. See the README for the full setup,
+  // including the one field inside Stripe you must set correctly (the
+  // redirect URL after payment) and the SESSION_SECRET environment
+  // variable this mode also needs.
+  STRIPE_PAYMENT_LINK: "https://buy.stripe.com/9B600i38FawKc9R9Gf3Ru00",
+  // Optional — how the price shows up in the report page's copy, e.g.
+  // "£3/month". Leave blank and the copy just says "subscribe" with no
+  // figure (the real price always lives in Stripe, this is display-only).
+  SUBSCRIPTION_PRICE_LABEL: "£5/month",
   // Optional: shows a real street-level photo near the searched postcode.
   // Get a free key at console.cloud.google.com — enable "Street View Static
   // API", then restrict the key to your domain (HTTP referrers) before going
   // live. Leave blank and the photo section just stays hidden.
   GOOGLE_MAPS_API_KEY: "",
   // A real support address — shown in the footer once set. Worth having
-  // before you switch REPORT_MODE to "paid": it's where a buyer goes if a
+  // before you switch REPORT_MODE to "subscription": it's where a buyer goes if a
   // payment doesn't unlock a report.
   CONTACT_EMAIL: "",
 };
@@ -342,12 +348,14 @@ wireCta("convCta", CONFIG.CONVEYANCING_URL, "Conveyancing comparison coming soon
 if (CONFIG.CONTACT_EMAIL) {
   document.getElementById("contactLine").innerHTML = ' · <a href="mailto:' + CONFIG.CONTACT_EMAIL + '">' + CONFIG.CONTACT_EMAIL + '</a>';
 }
-const paidNotConfigured = CONFIG.REPORT_MODE === "paid" && (!CONFIG.STRIPE_PAYMENT_LINK || CONFIG.STRIPE_PAYMENT_LINK === "#");
-if (CONFIG.REPORT_MODE === "interest" || paidNotConfigured) {
+const subscriptionNotConfigured = CONFIG.REPORT_MODE === "subscription" && (!CONFIG.STRIPE_PAYMENT_LINK || CONFIG.STRIPE_PAYMENT_LINK === "#");
+if (CONFIG.REPORT_MODE === "interest" || subscriptionNotConfigured) {
   wireCta("reportCta", CONFIG.REPORT_INTEREST_URL, "Full street reports are coming soon — thanks for your interest, it genuinely helps us decide to build it!");
 }
-// "free" and "paid" (once configured) get their href set per-search inside render(),
-// since the link needs to carry that search's postcode, price and property type.
+// "free" and "subscription" (once configured) both just link to report.html
+// with this search's postcode/price/type — report.html itself decides
+// whether to show the report or the subscribe paywall, since subscription
+// access isn't tied to any one report.
 
 document.getElementById("shareBtn").addEventListener("click", async () => {
   const shareData = { title: "KerbCheck", text: "Check if an asking price is actually fair — real sold prices, free:", url: location.origin };
@@ -560,20 +568,18 @@ function render(pc, asking, sales, lat, lng){
     rc.target = "_blank"; rc.rel = "noopener";
     rc.querySelector(".t").textContent = "Get the full street report — free";
     rc.querySelector(".d").textContent = "Every sale at this postcode since 2000, the price trend, and a negotiation cheat sheet for this exact property.";
-  } else if (CONFIG.REPORT_MODE === "paid" && CONFIG.STRIPE_PAYMENT_LINK && CONFIG.STRIPE_PAYMENT_LINK !== "#") {
+  } else if (CONFIG.REPORT_MODE === "subscription" && CONFIG.STRIPE_PAYMENT_LINK && CONFIG.STRIPE_PAYMENT_LINK !== "#") {
     const rc = document.getElementById("reportCta");
-    // Encode which report this payment is for — decoded server-side in
-    // api/verify-payment.js once Stripe confirms the payment went through.
-    // This doesn't set the price charged (that's fixed inside the Stripe
-    // Payment Link itself); it just tells us which report to unlock.
-    const ref = btoa(pc + "|" + asking + "|" + selectedType);
-    rc.href = CONFIG.STRIPE_PAYMENT_LINK + "?client_reference_id=" + encodeURIComponent(ref);
+    // report.html carries out the actual paywall/subscribe check — this
+    // link just tells it which report to show once someone has access.
+    rc.href = "/report.html?postcode=" + encodeURIComponent(pc) + "&price=" + asking + "&type=" + encodeURIComponent(selectedType);
     rc.target = "_self"; rc.removeAttribute("rel");
-    rc.querySelector(".t").textContent = "Get the full street report — £3";
-    rc.querySelector(".d").textContent = "Every sale at this postcode since 2000, the price trend, and a negotiation cheat sheet for this exact property. Secure one-off payment via Stripe.";
+    const priceLabel = CONFIG.SUBSCRIPTION_PRICE_LABEL ? " — " + CONFIG.SUBSCRIPTION_PRICE_LABEL : "";
+    rc.querySelector(".t").textContent = "Get unlimited street reports" + priceLabel;
+    rc.querySelector(".d").textContent = "Every sale at this postcode since 2000, the price trend, and a negotiation cheat sheet — for this and every property you check, for as long as you subscribe. Cancel any time.";
     document.getElementById("reportWaiver").classList.remove("hidden");
   }
-  if (CONFIG.REPORT_MODE !== "paid") {
+  if (CONFIG.REPORT_MODE !== "subscription") {
     document.getElementById("reportWaiver").classList.add("hidden");
   }
 

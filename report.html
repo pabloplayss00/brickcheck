@@ -128,12 +128,14 @@
 
 <script>
 // Keep these identical to the CONFIG block in index.html — REPORT_MODE
-// decides whether this page is a paywall ("paid"), open to anyone with the
-// link ("free"), or unused ("interest", the index page never links here).
+// decides whether this page is a subscription paywall ("subscription"),
+// open to anyone with the link ("free"), or unused ("interest", the index
+// page never links here).
 const CONFIG = {
   GOOGLE_MAPS_API_KEY: "",
-  REPORT_MODE: "interest",
-  STRIPE_PAYMENT_LINK: "",
+  REPORT_MODE: "subscription",
+  STRIPE_PAYMENT_LINK: "https://buy.stripe.com/9B600i38FawKc9R9Gf3Ru00",
+  SUBSCRIPTION_PRICE_LABEL: "£5/month",
   CONTACT_EMAIL: "",
 };
 if (CONFIG.CONTACT_EMAIL) {
@@ -156,6 +158,29 @@ function fmtDate(iso){ const d=new Date(iso); return d.toLocaleDateString("en-GB
 function el(id){ return document.getElementById(id); }
 function stat(v,l){ return '<div class="stat"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>'; }
 
+// Carries postcode/price/type across the trip to Stripe and back — a
+// subscription Payment Link's "after payment" redirect goes to one fixed
+// URL (it can't forward the original ?postcode=...&price=... query string),
+// so we stash the search here right before sending someone to pay, and
+// recover it here if Stripe's redirect lands back without those params.
+const PENDING_KEY = "kc_pending_report";
+function savePendingReport(){
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify({ postcode: pcRaw, price: asking, type })); }
+  catch (e) { /* private browsing etc — worst case the buyer re-enters details */ }
+}
+function loadPendingReport(){
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (!raw) return;
+    const p = JSON.parse(raw);
+    if (p && p.postcode && p.price) {
+      pcRaw = pcRaw || p.postcode;
+      asking = asking || parseInt(p.price, 10);
+      type = (params.get("type") ? type : p.type) || type;
+    }
+  } catch (e) { /* ignore */ }
+}
+
 function showPaywall(message){
   el("loading").classList.add("hidden");
   if (!pcRaw || !asking) {
@@ -163,48 +188,114 @@ function showPaywall(message){
     el("err").classList.remove("hidden");
     return;
   }
-  el("docsub").textContent = pcRaw.toUpperCase() + " · asking " + gbp(asking) + " · full report £3";
+  el("docsub").textContent = pcRaw.toUpperCase() + " · asking " + gbp(asking) + " · full report by subscription";
   if (message) {
     el("err").textContent = message;
     el("err").classList.remove("hidden");
   }
+  const priceLabel = CONFIG.SUBSCRIPTION_PRICE_LABEL ? " — " + CONFIG.SUBSCRIPTION_PRICE_LABEL : "";
   const box = document.createElement("div");
   box.className = "card";
   if (CONFIG.STRIPE_PAYMENT_LINK && CONFIG.STRIPE_PAYMENT_LINK !== "#") {
-    const ref = btoa(pcRaw + "|" + asking + "|" + type);
-    const payUrl = CONFIG.STRIPE_PAYMENT_LINK + "?client_reference_id=" + encodeURIComponent(ref);
     box.innerHTML =
-      '<h3 class="sect">Unlock the full street report — £3</h3>' +
-      '<p class="sub">Every recorded sale at this postcode since 2000, the price trend, the wider area stats, and a negotiation cheat sheet built from the data. One-off payment, secure checkout via Stripe.</p>' +
-      '<a class="btn dark" style="display:block;text-align:center;text-decoration:none;" href="' + payUrl + '">Pay £3 &amp; view report</a>' +
-      '<p class="sub" style="margin-top:10px">Instant digital access — by paying you agree to get the report immediately and waive the standard 14-day cancellation right for this purchase. <a href="/legal.html">Terms</a>.</p>';
+      '<h3 class="sect">Unlock unlimited street reports' + priceLabel + '</h3>' +
+      '<p class="sub">Subscribe once and get every recorded sale at any postcode since 2000, price trends, wider-area stats, and a negotiation cheat sheet — for as many properties as you check, for as long as you subscribe. Cancel any time.</p>' +
+      '<button class="btn dark" style="display:block;width:100%;" id="subscribeBtn">Subscribe' + priceLabel + ' &amp; view report</button>' +
+      '<p class="sub" style="margin-top:10px">Billed by Stripe until you cancel. Digital access starts immediately on your first payment, so by subscribing you agree to waive the standard 14-day cancellation right for that first payment — you can still cancel future renewals at any time. <a href="/legal.html">Terms</a>.</p>' +
+      '<p class="sub" style="margin-top:14px;border-top:1px dashed var(--line);padding-top:10px">Already subscribe? <a href="#" id="restoreLink">Restore access with your email</a>.</p>' +
+      '<div class="hidden" id="restoreBox" style="margin-top:10px">' +
+        '<input class="btn" id="restoreEmail" type="email" placeholder="you@example.com" style="text-align:left;cursor:text;">' +
+        '<button class="btn dark" id="restoreGo" style="width:100%;margin-top:8px;">Restore access</button>' +
+      '</div>';
   } else {
     box.innerHTML =
       '<h3 class="sect">Full report — coming soon</h3>' +
-      '<p class="sub">Payments aren’t set up on this site yet.</p>';
+      '<p class="sub">Subscriptions aren’t set up on this site yet.</p>';
   }
   el("report").parentNode.insertBefore(box, el("report"));
+
+  const subBtn = document.getElementById("subscribeBtn");
+  if (subBtn) subBtn.addEventListener("click", () => {
+    savePendingReport();
+    location.href = CONFIG.STRIPE_PAYMENT_LINK;
+  });
+  const restoreLink = document.getElementById("restoreLink");
+  if (restoreLink) restoreLink.addEventListener("click", (e) => {
+    e.preventDefault();
+    document.getElementById("restoreBox").classList.remove("hidden");
+    restoreLink.parentNode.classList.add("hidden");
+  });
+  const restoreGo = document.getElementById("restoreGo");
+  if (restoreGo) restoreGo.addEventListener("click", async () => {
+    const email = document.getElementById("restoreEmail").value.trim();
+    if (!email) return;
+    restoreGo.disabled = true;
+    restoreGo.textContent = "Checking…";
+    try {
+      const resp = await fetch("/api/restore-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.error || "No active subscription found for that email.");
+      location.reload();
+    } catch (e) {
+      restoreGo.disabled = false;
+      restoreGo.textContent = "Restore access";
+      el("err").textContent = e.message;
+      el("err").classList.remove("hidden");
+    }
+  });
+}
+
+function addManageLink(){
+  const box = document.createElement("div");
+  box.className = "footer noprint";
+  box.innerHTML = '<a href="#" id="manageLink">Manage or cancel your subscription</a>';
+  el("report").appendChild(box);
+  document.getElementById("manageLink").addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.target.textContent = "Opening…";
+    try {
+      const resp = await fetch("/api/create-portal-session");
+      const data = await resp.json();
+      if (!resp.ok || !data.url) throw new Error(data.error || "Could not open subscription management.");
+      location.href = data.url;
+    } catch (err) {
+      e.target.textContent = err.message;
+    }
+  });
 }
 
 async function main(){
-  if (CONFIG.REPORT_MODE === "paid") {
+  if (CONFIG.REPORT_MODE === "subscription") {
+    loadPendingReport();
+    let active = false;
+
     if (sessionId) {
-      let verified;
       try {
-        const vresp = await fetch("/api/verify-payment?session_id=" + encodeURIComponent(sessionId));
-        verified = await vresp.json();
-        if (!vresp.ok || !verified.paid) throw new Error(verified.error || "Payment could not be verified.");
+        const vresp = await fetch("/api/verify-subscription?session_id=" + encodeURIComponent(sessionId));
+        const verified = await vresp.json();
+        if (!vresp.ok || !verified.active) throw new Error(verified.error || "Subscription could not be verified.");
+        active = true;
+        try { localStorage.removeItem(PENDING_KEY); } catch (e) {}
+        // Drop session_id from the visible URL once used, so a refresh
+        // doesn't keep re-verifying the same checkout session.
+        history.replaceState(null, "", location.pathname + (pcRaw ? "?postcode=" + encodeURIComponent(pcRaw) + "&price=" + asking + "&type=" + encodeURIComponent(type) : ""));
       } catch (e) {
         showPaywall(e.message + " If you were charged, contact us and we'll sort it out.");
         return;
       }
-      // Trust the postcode/price/type Stripe handed back for this paid
-      // session over anything in the URL — the URL can be edited by anyone,
-      // this can't.
-      pcRaw = verified.postcode || pcRaw;
-      asking = parseInt(verified.price, 10) || asking;
-      type = verified.type || type;
     } else {
+      try {
+        const cresp = await fetch("/api/check-access");
+        const cdata = await cresp.json();
+        active = !!(cresp.ok && cdata.active);
+      } catch (e) { active = false; }
+    }
+
+    if (!active) {
       showPaywall();
       return;
     }
@@ -232,6 +323,7 @@ async function main(){
   el("loading").classList.add("hidden");
   render(data);
   el("report").classList.remove("hidden");
+  if (CONFIG.REPORT_MODE === "subscription") addManageLink();
 }
 
 function hideStreetPhoto(){ el("photoCard").classList.add("hidden"); }

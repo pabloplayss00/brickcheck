@@ -24,8 +24,11 @@
   body { margin:0; min-height:100vh; background:var(--bg); color:var(--ink); font-family:'Inter',system-ui,sans-serif; }
 
   /* ---------- header + hero ---------- */
-  .hero { background:var(--ink); color:#fff; padding:22px 16px 88px;
-          background-image:radial-gradient(rgba(255,255,255,.06) 1px, transparent 1px); background-size:22px 22px; }
+  .hero { color:#fff; padding:22px 16px 88px;
+          background:
+            linear-gradient(180deg, rgba(20,31,49,.82), rgba(20,31,49,.93) 55%, var(--ink) 100%) 0 0/100% 100% no-repeat,
+            radial-gradient(rgba(255,255,255,.08) 1px, transparent 1px) 0 0/22px 22px repeat,
+            url('https://images.unsplash.com/photo-1759338584492-45647a320916?fm=jpg&q=70&w=1600&auto=format&fit=crop&ixlib=rb-4.1.0') center 30%/cover no-repeat; }
   .hero-inner { max-width:480px; margin:0 auto; }
   .wordmark { font-family:'Zilla Slab',serif; font-weight:700; font-size:24px; letter-spacing:-.5px; }
   .wordmark .dot { color:#FF6B54; }
@@ -200,6 +203,9 @@
       <h3 class="sect">What actually sold nearby</h3>
       <p class="sub" id="compsSub"></p>
       <div id="comps"></div>
+      <div class="photowrap" style="margin:2px 0 12px">
+        <img src="https://images.unsplash.com/photo-1719941857483-f6789ad7200f?fm=jpg&q=70&w=1000&auto=format&fit=crop&ixlib=rb-4.1.0" alt="A colourful row of houses on a UK street" loading="lazy">
+      </div>
       <a class="cta" id="reportCta" href="#">
         <div class="t">Get the full street report</div>
         <div class="d">Every sale since 2000, price trends for this street, and a negotiation cheat sheet. Register your interest — coming soon.</div>
@@ -210,6 +216,9 @@
     <div class="card">
       <h3 class="sect">Before you offer</h3>
       <p class="sub">The two things that make sellers take your offer seriously:</p>
+      <div class="photowrap" style="margin-bottom:12px">
+        <img src="https://images.unsplash.com/photo-1741156386380-0236c72eb6f9?fm=jpg&q=70&w=1000&auto=format&fit=crop&ixlib=rb-4.1.0" alt="Holding a set of house keys at a front door" loading="lazy">
+      </div>
       <a class="cta primary" id="brokerCta" href="#">
         <div class="t">Get a mortgage decision in principle →</div>
         <div class="d">Free, no impact on your credit score. An offer backed by a DIP jumps the queue.</div>
@@ -232,6 +241,7 @@
   <div class="footer">
     Sold-price estimates are indicative and not a formal valuation.<br>
     Some links are referral links — if you use them we may receive a fee, at no cost to you.<br>
+    Photos via <a href="https://unsplash.com" target="_blank" rel="noopener">Unsplash</a>.<br>
     Contains HM Land Registry data © Crown copyright and database right 2026.
     Licensed under the <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">Open Government Licence v3.0</a>.<br>
     <a href="/legal.html">Terms &amp; Privacy</a><span id="contactLine"></span>
@@ -264,7 +274,7 @@ const CONFIG = {
   // Optional — how the price shows up in the report page's copy, e.g.
   // "£3/month". Leave blank and the copy just says "subscribe" with no
   // figure (the real price always lives in Stripe, this is display-only).
-  SUBSCRIPTION_PRICE_LABEL: "£5/month",
+  SUBSCRIPTION_PRICE_LABEL: "£6/month inc. VAT",
   // Optional: shows a real street-level photo near the searched postcode.
   // Get a free key at console.cloud.google.com — enable "Street View Static
   // API", then restrict the key to your domain (HTTP referrers) before going

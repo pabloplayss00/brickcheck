@@ -51,11 +51,11 @@ polite "coming soon" message, which is fine for launch.
   programmes on the same networks.
 - **SURVEY_URL** — local RICS surveyors, same direct approach as brokers.
 - **REPORT_INTEREST_URL** — create a free form (tally.so or Google Forms)
-  saying "Full street reports — £3. Leave your email and we'll tell you when
-  it's ready." Every email is a vote to build it. If 50+ people sign up,
-  build it; if 3 do, you just saved yourself a month of work.
-  This is the default (`REPORT_MODE: "interest"`) — do this first, before the
-  paid version below.
+  saying "Full street reports — subscribe monthly. Leave your email and
+  we'll tell you when it's ready." Every email is a vote to build it. If
+  50+ people sign up, build it; if 3 do, you just saved yourself a month of
+  work. This is the default (`REPORT_MODE: "interest"`) — do this first,
+  before the subscription version below.
 
 After editing, upload the changed `index.html` to GitHub again (same drag-and
 -drop). Vercel redeploys automatically in about a minute.
@@ -80,7 +80,7 @@ After editing, upload the changed `index.html` to GitHub again (same drag-and
 
 - **EPC_API_EMAIL / EPC_API_KEY — optional, adds floor area &amp; £-per-m².**
   This is the single biggest accuracy upgrade available, and it's what makes
-  the £3 report worth paying for: Land Registry sold-price data has no size
+  the subscription report worth paying for: Land Registry sold-price data has no size
   information at all, so "£450,000 for a terraced house" could mean two very
   different things depending on square footage. Adding this shows the floor
   area, energy rating, and asking-price-per-square-metre alongside the
@@ -100,9 +100,10 @@ After editing, upload the changed `index.html` to GitHub again (same drag-and
   size," not a guarantee it's the exact unit being sold.
 
 - **CONTACT_EMAIL &amp; legal.html — do this before switching REPORT_MODE to
-  "paid".** Once you're taking real payments you need a real way for someone
-  to reach you if a payment doesn't unlock a report, plus basic terms
-  covering refunds. Both are already built — you just need to fill them in:
+  "subscription".** Once you're taking real payments you need a real way
+  for someone to reach you if a payment doesn't unlock a report, plus basic
+  terms covering billing and cancellation. Both are already built — you
+  just need to fill them in:
   1. Set `CONTACT_EMAIL` in the `CONFIG` block of `index.html` and
      `report.html` to a real inbox you check. It appears in the footer of
      both pages automatically.
@@ -110,30 +111,39 @@ After editing, upload the changed `index.html` to GitHub again (same drag-and
      name/trading name, your contact email (twice), and the copyright year
      — with your real details.
   3. **This isn't legal advice, and I'm not a lawyer** — `legal.html` covers
-     the basics (what the site is, that the £3 report is instant digital
-     content and what that means for cancellation rights, how payment and
-     data are handled), but have it properly checked before you rely on it,
-     especially once real money is involved.
+     the basics (what the site is, that the report is a recurring
+     subscription and what that means for cancellation and refunds, how
+     payment and data are handled), but have it properly checked before you
+     rely on it, especially once real money is involved.
   4. In Stripe, on your Payment Link, you can also turn on **"Collect
      consent to terms of service"** under its checkout options and point it
      at `https://yourdomain.co.uk/legal.html` — this makes ticking the box
      part of the actual checkout, not just a line on your own site.
 
-- **Turning the £3 report on for real (once the interest form shows demand)**
+- **Turning the subscription report on for real (once the interest form
+  shows demand)**
 
   The interest form above just collects emails. This wires up an actual
-  payment — someone clicks "Get the full street report," pays £3 through
-  Stripe, and lands back on `report.html` with their report unlocked. No one
-  can view a report without a confirmed Stripe payment: the report page asks
-  Stripe directly, using a secret key that never leaves your server, before
-  it shows anything.
+  monthly subscription — someone clicks "Get unlimited street reports,"
+  subscribes through Stripe, and lands back on `report.html` with unlimited
+  reports unlocked for as long as they keep paying. No one can view a
+  report without an active Stripe subscription: the report page asks Stripe
+  directly, using a secret key that never leaves your server, before it
+  shows anything, and re-checks on every visit — so access disappears
+  automatically the moment someone cancels or a renewal payment fails.
 
   1. **Create a Stripe account** at stripe.com (free — you only pay a small
      percentage per transaction, no monthly fee).
-  2. In the Stripe Dashboard, go to **Payment links → Create payment link**.
-     Add a product called "KerbCheck street report," one-time price **£3**,
-     GBP. Save it.
-  3. Still editing that Payment Link, open **"After payment"** and choose
+  2. In the Stripe Dashboard, go to **Product catalogue → Add product**.
+     Call it "KerbCheck Street Report." When you add its price, make sure
+     you pick **Recurring**, billing period **Monthly**, in **GBP** — this
+     is the step that matters: a **one-time** price here would only charge
+     once and never unlock anything again next month, while an accidental
+     recurring price on top of a one-time one would double-charge people.
+     One recurring monthly price is what you want.
+  3. From that price, click **Create payment link** (or **Payment links →
+     Create payment link** and pick the price there).
+  4. Still editing that Payment Link, open **"After payment"** and choose
      **"Don't show confirmation page"** → redirect customers to your
      website. Set the redirect URL to:
      ```
@@ -142,11 +152,15 @@ After editing, upload the changed `index.html` to GitHub again (same drag-and
      (use your actual domain; keep `{CHECKOUT_SESSION_ID}` exactly as shown
      — Stripe fills that part in automatically). This one field is what
      sends buyers back to their report after paying, so it's worth
-     double-checking.
-  4. Copy the Payment Link's URL (starts `https://buy.stripe.com/...`) into
+     double-checking. `report.html` recovers which postcode/price they were
+     looking at from the browser itself, so this redirect URL doesn't need
+     to carry that.
+  5. Copy the Payment Link's URL (starts `https://buy.stripe.com/...`) into
      `STRIPE_PAYMENT_LINK` in the `CONFIG` block of **both** `index.html`
-     and `report.html`, and set `REPORT_MODE: "paid"` in both files too.
-  5. In Stripe, go to **Developers → API keys** and copy the **Secret key**
+     and `report.html`, and set `REPORT_MODE: "subscription"` in both files
+     too. Optionally set `SUBSCRIPTION_PRICE_LABEL` (e.g. `"£3/month"`) in
+     both, purely so the on-page copy shows the price.
+  6. In Stripe, go to **Developers → API keys** and copy the **Secret key**
      (starts `sk_live_...`; use the "test mode" toggle and its `sk_test_...`
      key while you try this out, so you're not paying yourself real money
      to test it). In Vercel: **Project → Settings → Environment Variables**,
@@ -154,13 +168,23 @@ After editing, upload the changed `index.html` to GitHub again (same drag-and
      index.html, report.html, or anything you commit to GitHub** — those
      files are public even in a "private" repo once deployed, and this key
      can issue refunds and read your payment history.
-  6. Redeploy (upload the two changed HTML files to GitHub; Vercel picks up
-     the new environment variable automatically). Run one real test
-     purchase yourself in Stripe's test mode before switching to live keys.
+  7. Still in Vercel environment variables, add a second one: `SESSION_SECRET`
+     — any long random string (generate one with `openssl rand -hex 32` in
+     a terminal, or any password generator). This is what signs the cookie
+     that recognises a returning subscriber; treat it exactly like the
+     Stripe secret key — never commit it anywhere.
+  8. In Stripe, go to **Settings → Billing → Customer portal** and turn it
+     on, allowing at least "cancel subscriptions." This is what powers the
+     "Manage or cancel your subscription" link that appears on unlocked
+     reports — without this step that link will show an error.
+  9. Redeploy (upload the changed files to GitHub; Vercel picks up the new
+     environment variables automatically). Run one real test subscription
+     yourself in Stripe's test mode — including cancelling it and
+     confirming access disappears — before switching to live keys.
 
-  What this buys you beyond the interest form: real revenue with zero
-  ongoing work, and it fully replaces `REPORT_INTEREST_URL` — once
-  `REPORT_MODE` is `"paid"`, the interest form is no longer shown.
+  What this buys you beyond the interest form: real recurring revenue with
+  zero ongoing work, and it fully replaces `REPORT_INTEREST_URL` — once
+  `REPORT_MODE` is `"subscription"`, the interest form is no longer shown.
 
 **Keep the disclosure line in the footer** — telling users that links may earn
 you a fee is a legal requirement for affiliate marketing in the UK (CAP Code),
@@ -197,19 +221,31 @@ next idea. Either result is a win at this stage.
 - **Matching EPC floor area to individual comparable sales**, not just the
   searched property — a proper price-per-square-metre model across every
   comp, not just the one you searched. Real address-matching work; worth it
-  once the £3 report has proven people will pay for it.
+  once the subscription report has proven people will pay for it.
 
 ## What's in this folder
 
 - `index.html` — the whole site: design, valuation logic, referral buttons.
-- `report.html` — the full street report page (free or £3, per `REPORT_MODE`).
-- `legal.html` — Terms &amp; Privacy, including the £3 report's refund policy.
-  Fill in the placeholders before going live (see step 3 above).
+- `report.html` — the full street report page (free or subscription, per
+  `REPORT_MODE`).
+- `legal.html` — Terms &amp; Privacy, including the subscription's billing
+  and cancellation policy. Fill in the placeholders before going live (see
+  step 3 above).
 - `api/sold-prices.js` — a small server function that fetches real sold
   prices for a postcode sector from HM Land Registry's open data service.
 - `api/street-report.js` — the same, but for the full street report page.
-- `api/verify-payment.js` — confirms a Stripe payment before `report.html`
-  shows a paid report (only used when `REPORT_MODE` is `"paid"`).
+- `api/verify-subscription.js` — confirms a brand-new Stripe subscription
+  right after checkout and signs in the browser that made it (only used
+  when `REPORT_MODE` is `"subscription"`).
+- `api/check-access.js` — on every report page load, checks whether the
+  signed-in browser currently has an active subscription.
+- `api/restore-access.js` — lets a subscriber sign back in on a new device
+  by confirming their email has an active subscription.
+- `api/create-portal-session.js` — hands a subscriber off to Stripe's own
+  page to manage or cancel their subscription.
+- `lib/session.js` — signs/reads the small cookie that identifies a
+  returning subscriber's browser (needs the `SESSION_SECRET` environment
+  variable).
 - `api/epc.js` — looks up floor area &amp; energy rating for a postcode
   (only returns data once `EPC_API_EMAIL`/`EPC_API_KEY` are set).
 - `lib/rateLimit.js` — a small shared helper the API routes use to cap how
